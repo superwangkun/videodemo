@@ -24,19 +24,19 @@ import wk.com.videodemo.R;
 
 /**
  * Camera2的操作都是基于管道的，就是发送请求、等待回应的过程，使用起来没有代码结构不如Camera那种线性调用清晰。通过下面四个回调就能说清楚使用过程：
- * <p>
+ *
  * 1.等待surface创建成功的回调，即SurfaceTextureListener（或者是SurfaceView的listener，demo用的是TextureView）
  * 做Camera开发就必须要预览，要预览就得有Surface，所以第一步就是等待Surface创建完成；
- * <p>
+ *
  * 2.等待Camera启动完成的回调，即CameraDevice.StateCallback
  * Camera的启动需要一个过程，只有Camera启动后才可进行各种操作
- * <p>
+ *
  * 3.等待会话建立的回调，即CameraCaptureSession.StateCallback
  * 要向Camera发送各种操作请求，就必须先建立会话通道
- * <p>
+ *
  * 4.等待操作请求的回调，即CameraCaptureSession.CaptureCallback
  * 向Camera发起了"拍照"请求后，Camera需要一定时间才能完成，等待完成后就可以对图像数据进行处理了
- * <p>
+ *
  * 总结起来就是：创建surface、启动camera、创建camera会话、发起拍照请求
  */
 public class VideoActivity extends Activity implements View.OnClickListener {
