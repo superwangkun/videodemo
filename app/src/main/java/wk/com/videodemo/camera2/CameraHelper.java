@@ -14,12 +14,10 @@ import android.text.TextUtils;
 import android.util.Size;
 
 public class CameraHelper {
-    private Context mContext;
     private CameraManager mManager;
     private String mBackCameraId;
 
     public CameraHelper(Context context) {
-        mContext = context;
         mManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
     }
 
@@ -71,6 +69,7 @@ public class CameraHelper {
         return null;
     }
 
+    // 注意，camera、recorder权限都是隐私权限，6.0以后需要动态权限配置
     @SuppressLint("MissingPermission")
     public void openCamera(String cameraId, CameraDevice.StateCallback callback, Handler handler) {
         try {

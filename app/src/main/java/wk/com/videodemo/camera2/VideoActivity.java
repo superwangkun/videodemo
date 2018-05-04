@@ -39,16 +39,20 @@ public class VideoActivity extends Activity implements View.OnClickListener {
 
     private TextureView mTextureView;
 
+    private CameraDevice mCameraDevice;
+
+    // 方便理清camera2使用的主逻辑，一些配置代码、计算代码放在各个helper类里
     private CameraHelper mCameraHelper;
     private RecorderHelper mRecorderHelper;
     private TextureHelper mTextureHelper;
 
-    // 一个device同一时间只能存在一个会话session，对应一个request、surfaceList
+    // 一个device同一时间只能存在一个session，新的session启动时会关闭其它session；
+    // 一个session对应一个request、surfaceList，注意处理好一一对应关系
     private CaptureRequest.Builder mRequest;
-    private CameraDevice mCameraDevice;
     private List<Surface> mSurfaceList = new ArrayList<>();
     private CameraCaptureSession mSession;
 
+    // camera2中用到的几个回调，通过指定handler，回调方法就会在该handler所在线程被调用
     private HandlerThread mBackgroundThread;
     private Handler mBackgroundHandler;
 
@@ -69,16 +73,22 @@ public class VideoActivity extends Activity implements View.OnClickListener {
     @Override
     public void onResume() {
         super.onResume();
+
+        // 启动后台线程，用于执行回调中的代码
         startBackgroundThread();
+
+        // 如果Activity是从stop/pause回来，TextureView是OK的，只需要重新开启camera就行
         if (mTextureView.isAvailable()) {
             openCamera();
         } else {
+            // Activity创建时，添加TextureView的监听，TextureView创建完成后就可以开启camera就行了
             mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
         }
     }
 
     @Override
     public void onPause() {
+        // 关闭camera，关闭后台线程
         closeCamera();
         stopBackgroundThread();
         super.onPause();
@@ -125,9 +135,9 @@ public class VideoActivity extends Activity implements View.OnClickListener {
         mCameraHelper.openCamera(mCameraHelper.getBackCameraId(), new CameraDevice.StateCallback() {
             @Override
             public void onOpened(@NonNull CameraDevice cameraDevice) {
-                Log.i(TAG, "opened");
+                // 如果openCamera()方法的第三个参数指定了handler，那么下面的代码就会在该handler所在线程中执行，如果不指定就在openCamera()方法所在线程执行
                 mCameraDevice = cameraDevice;
-                startPreviewRequest();
+                startPreviewSession();
 
                 if (null != mTextureView) {
                     mTextureHelper.configPreview(mTextureView, mTextureView.getWidth(), mTextureView.getHeight());
@@ -151,6 +161,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
     }
 
     private void addTextureViewSurface() {
+        // 获取TextureView中的surface，添加到request中、添加到surfaceList中
         Surface previewSurface = mTextureHelper.getSurface(mTextureView);
 
         if (null != previewSurface) {
@@ -160,6 +171,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
     }
 
     private void addRecorderSurface() {
+        // 获取MediaRecorder中的surface，添加到request中、添加到surfaceList中
         Surface recorderSurface = mRecorderHelper.getSurface();
 
         if (null != recorderSurface) {
@@ -169,6 +181,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
     }
 
     private void closeCamera() {
+        // 关闭camera预览，关闭MediaRecorder
         closePreviewSession();
         if (null != mCameraDevice) {
             mCameraDevice.close();
@@ -177,7 +190,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
         mRecorderHelper.release();
     }
 
-    private void startPreviewRequest() {
+    private void startPreviewSession() {
         if (null == mCameraDevice || !mTextureView.isAvailable()) {
             return;
         }
@@ -191,6 +204,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
             mRequest = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             addTextureViewSurface();
 
+            // 启动会话
             // 参数1：camera捕捉到的画面分别输出到surfaceList的各个surface中;
             // 参数2：会话状态监听;
             // 参数3：监听器中的方法会在指定的线程里调用，通过一个handler对象来指定线程;
@@ -216,7 +230,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
         }
     }
 
-    private void startRecordRequest() {
+    private void startRecordSession() {
         if (null == mCameraDevice || !mTextureView.isAvailable()) {
             return;
         }
@@ -230,7 +244,7 @@ public class VideoActivity extends Activity implements View.OnClickListener {
             addTextureViewSurface();
             addRecorderSurface();
 
-            // 启动会话
+            // 启动会话。可以看出跟上面的"预览session"是一样的，只是surfaceList多加了一个
             mCameraDevice.createCaptureSession(mSurfaceList, new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
@@ -263,7 +277,12 @@ public class VideoActivity extends Activity implements View.OnClickListener {
 
         try {
             mRequest.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+
+            // 这个接口是预览。作用是把camera捕捉到的画面输出到surfaceList中的各个surface上，每隔一定时间重复一次
             mSession.setRepeatingRequest(mRequest.build(), null, mBackgroundHandler);
+
+            // 这个接口是拍照。由于拍照需要获得图像数据，所以这里需要实现CaptureCallback，在回调里获得图像数据
+//            mSession.capture(CaptureRequest request, CaptureCallback listener, Handler handler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -284,15 +303,16 @@ public class VideoActivity extends Activity implements View.OnClickListener {
     private void startRecord() {
         // 设置Recorder配置，启动录像会话
         int sensorOrientation = mCameraHelper.getSensorOrientation(mCameraHelper.getBackCameraId());
-        mRecorderHelper.configRecorder(sensorOrientation, getWindowManager().getDefaultDisplay().getRotation());
+        int displayRotation = getWindowManager().getDefaultDisplay().getRotation();
+        mRecorderHelper.configRecorder(sensorOrientation, displayRotation);
 
-        startRecordRequest();
+        startRecordSession();
     }
 
     private void stopRecord() {
         // 关闭录像会话，停止录像，重新进入预览
         mRecorderHelper.stop();
-        startPreviewRequest();
+        startPreviewSession();
     }
 
     // TextureView状态监听
